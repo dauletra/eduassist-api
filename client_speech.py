@@ -8,13 +8,6 @@ import numpy as np
 import websockets
 import sounddevice as sd
 
-# ---- Wake word (Porcupine) ----
-# Requires: pip install pvporcupine
-try:
-    import pvporcupine
-except Exception:
-    pvporcupine = None  # handled at runtime
-
 RATE = 16000  # 16 kHz mono
 
 # Try to load API key and other settings from .env if available
@@ -25,21 +18,9 @@ except Exception:
     pass
 
 API_KEY = os.getenv("API_KEY", "your_api_key_for_clients")
-LANGUAGE = os.getenv("LANGUAGE", "kk-KK")
+LANGUAGE = os.getenv("LANGUAGE", "kk-KZ")
 HOST = os.getenv("API_HOST", "localhost:8080")  # without scheme
 NORMALIZE = os.getenv("NORMALIZE", "0").lower() in ("1", "true", "yes")
-
-# Porcupine settings
-PICOVOICE_ACCESS_KEY: Optional[str] = os.getenv("PICOVOICE_ACCESS_KEY")
-PPN_PATH = os.getenv("WAKEWORD_FILE", os.path.join(os.path.dirname(__file__), "Galaxy_en_windows_v3_0_0.ppn"))
-
-# Проверка существования файла
-if not os.path.exists(PPN_PATH):
-    print(f"[error] Wake word file not found: {PPN_PATH}")
-    print("Please download the .ppn file from Picovoice Console and place it in the project directory")
-    sys.exit(1)
-
-WAKE_SENS = float(os.getenv("WAKEWORD_SENSITIVITY", "0.6"))
 
 # End-of-utterance (silence) detector
 ENERGY_THRESHOLD = int(os.getenv("ENERGY_THRESHOLD", "500"))  # int16 avg abs threshold
@@ -49,33 +30,17 @@ END_SIL_MS = int(os.getenv("END_SIL_MS", "800"))  # required trailing silence to
 def print_instructions(ws_url: str, frame_len: int):
     print("================ Voice Assistant Client ==================")
     print("WebSocket:", ws_url)
-    print("Mode: Wake word 'Galaxy' → stream one command → server detects end-of-utterance")
+    print("Mode: Press SPACE to start recording → stream one command → server detects end-of-utterance")
     print(f"Audio: 16 kHz, 16-bit, mono, blocksize={frame_len} samples")
     print("Controls:")
+    print("  SPACE   — start recording")
     print("  Q or Esc — quit")
     print("  X        — cancel current recording and send {\"event\":\"stop\"}")
     print("==========================================================")
 
 
 async def run():
-    if pvporcupine is None:
-        print("[error] pvporcupine not installed. Run: pip install pvporcupine")
-        return
-
-    # Init Porcupine with provided .ppn file
-    try:
-        porcupine = pvporcupine.create(
-            access_key=PICOVOICE_ACCESS_KEY,
-            keyword_paths=[PPN_PATH],
-            sensitivities=[WAKE_SENS]
-        )
-    except Exception as e:
-        print("[error] Failed to initialize Porcupine:", e)
-        print("Ensure PICOVOICE_ACCESS_KEY is set in .env and the .ppn file exists:", PPN_PATH)
-        return
-
-    RATE = porcupine.sample_rate
-    frame_len = porcupine.frame_length
+    frame_len = 512  # reasonable default frame size
     chunk_ms = int(1000 * frame_len / RATE)
 
     normalize_param = "1" if NORMALIZE else "0"
@@ -158,31 +123,14 @@ async def run():
                 if data is None:
                     break
                 buf = leftover + data
-                # process in frames for Porcupine (frame_len samples -> *2 bytes)
+                # process in frames (frame_len samples -> *2 bytes)
                 bytes_per_frame = frame_len * 2
                 offset = 0
                 while offset + bytes_per_frame <= len(buf):
                     frame_bytes = buf[offset:offset + bytes_per_frame]
                     offset += bytes_per_frame
-                    frame = np.frombuffer(frame_bytes, dtype=np.int16)
 
-                    # 1) Wake word detection when idle
-                    if state == "idle":
-                        try:
-                            keyword_index = porcupine.process(frame)
-                        except Exception:
-                            keyword_index = -1
-                        if keyword_index >= 0:
-                            print("\n[wake] Galaxy detected — start speaking your command...")
-                            state = "recording"
-                            try:
-                                stop_recording_evt.clear()
-                            except Exception:
-                                pass
-                            # Skip sending the wake-word frame; start from next frames
-                            continue
-
-                    # 2) When recording, forward audio; rely on server endpointing
+                    # When recording, forward audio; rely on server endpointing
                     if state == "recording":
                         # Forward frame to server
                         try:
@@ -199,7 +147,7 @@ async def run():
             if stream is None:
                 stream = sd.InputStream(samplerate=RATE, channels=1, dtype='int16', blocksize=frame_len, callback=sd_callback)
                 stream.start()
-                print("[client] microphone active — waiting for 'Galaxy' ...")
+                print("[client] microphone active — press SPACE to start recording...")
 
         async def stop_stream(send_stop_event: bool = True):
             nonlocal stream, state
@@ -220,11 +168,12 @@ async def run():
         recv_task = asyncio.create_task(receiver_task())
         proc_task = asyncio.create_task(processor_task())
 
-        # Start mic in wake-listen mode
+        # Start mic in idle mode
         await start_stream()
 
         async def key_listener():
-            # Q/Esc quit; X cancel current
+            nonlocal state  # Добавлено nonlocal для доступа к переменной state
+            # SPACE to start recording, Q/Esc quit; X cancel current
             if sys.platform.startswith("win"):
                 import msvcrt
                 try:
@@ -240,13 +189,22 @@ async def run():
                                     await ws.send(json.dumps({"event": "stop"}))
                                 except Exception:
                                     pass
+                                state = "idle"
+                                stop_recording_evt.set()
+                                print("\n[client] recording cancelled")
+                            elif ch == ' ':
+                                # SPACE to start recording
+                                if state == "idle":
+                                    state = "recording"
+                                    stop_recording_evt.clear()
+                                    print("\n[client] recording started — speak now...")
                         await asyncio.sleep(0.01)
                 except asyncio.CancelledError:
                     pass
             else:
                 try:
                     while True:
-                        line = await asyncio.to_thread(input, "(q=quit, x=cancel)> ")
+                        line = await asyncio.to_thread(input, "(space=record, x=cancel, q=quit)> ")
                         ch = (line or "").strip()[:1]
                         if ch in ('q', 'Q'):
                             await stop_stream(send_stop_event=True)
@@ -256,10 +214,18 @@ async def run():
                                 await ws.send(json.dumps({"event": "stop"}))
                             except Exception:
                                 pass
+                            state = "idle"
+                            stop_recording_evt.set()
+                            print("\n[client] recording cancelled")
+                        elif ch == '':
+                            # SPACE (empty input when pressing just Enter)
+                            if state == "idle":
+                                state = "recording"
+                                stop_recording_evt.clear()
+                                print("\n[client] recording started — speak now...")
                 except asyncio.CancelledError:
                     pass
 
-        # Simpler: we won't implement manual 'S' to avoid complex shared-state; wake word is primary.
         key_task = asyncio.create_task(key_listener())
 
         try:

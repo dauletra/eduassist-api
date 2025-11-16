@@ -31,9 +31,11 @@ except Exception:
     pass
 
 API_KEY = os.getenv("API_KEY")
+
 SPEECH_KEY = os.getenv("SPEECH_KEY") or os.getenv("AZURE_SPEECH_KEY")
 SPEECH_REGION = os.getenv("SPEECH_REGION") or os.getenv("AZURE_SPEECH_REGION")
 DEFAULT_STT_ENDPOINT_ID = os.getenv("AZURE_SPEECH_ENDPOINT_ID")
+
 DEFAULT_TTS_VOICE = os.getenv("AZURE_TTS_VOICE", "ru-RU-DmitryNeural")
 
 LANG_ENDPOINT = os.getenv("AZURE_CONVERSATIONS_ENDPOINT") or os.getenv("AZURE_LANGUAGE_ENDPOINT")
@@ -88,6 +90,12 @@ async def stt_stream(ws: WebSocket):
         audio_config = speechsdk.audio.AudioConfig(stream=push_stream)
 
         speech_config = make_speech_config(endpoint_id=endpoint_id, language=language)
+
+        speech_config = speechsdk.SpeechConfig(
+            subscription="e61bf7ac-d028-4145-b4f0-b63ff4d7a61a",
+            region="swedencentral",
+            endpoint="wss://swedencentral.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1"
+        )
 
         recognizer = speechsdk.SpeechRecognizer(
             speech_config=speech_config,
@@ -315,7 +323,7 @@ async def clu_predict(
         raise HTTPException(400, detail="Missing 'text'")
     project = payload.get("projectName", CLU_PROJECT)
     deployment = payload.get("deploymentName", CLU_DEPLOYMENT)
-    locale = payload.get("locale", "ru-RU")
+    locale = payload.get("locale", "kk-KZ")
 
     if not all([LANG_ENDPOINT, LANG_KEY, project, deployment]):
         raise HTTPException(500, detail="CLU config missing")

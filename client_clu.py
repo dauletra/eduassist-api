@@ -14,7 +14,7 @@ except Exception:
 
 API_KEY = os.getenv("API_KEY", "your_api_key_for_clients")
 API_HOST = os.getenv("API_HOST", "localhost:8080")  # host:port without scheme
-LANGUAGE = os.getenv("LANGUAGE", "ru-RU")
+LANGUAGE = os.getenv("LANGUAGE", "kk-KZ")
 # CLU configuration is server-side; the client does not need any Azure keys or project names.
 
 URL = f"http://{API_HOST}/v1/clu/predict"
@@ -111,8 +111,13 @@ def main(argv: List[str]) -> int:
 
     if argv[0] == "--demo":
         phrases = [
-            "открой журнал 9 в класса",
-            "подели учеников на 3 групп",
+            "9 в екінші топтың журналын аш",
+            "презентацияны аш",
+            "видеоны жап",
+            "оқушыларды екі топқа бөл",
+            "журналды жап",
+            "тапсырманы басып шығар",
+            "5 минутқа таймер қой"
         ]
         ok_all = True
         for p in phrases:
