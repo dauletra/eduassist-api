@@ -96,6 +96,17 @@ async def stt_stream(ws: WebSocket):
             audio_config=audio_config,
         )
 
+        # ✅ ДОБАВЬТЕ ЗДЕСЬ Phrase List
+        phrase_list = speechsdk.PhraseListGrammar.from_recognizer(recognizer)
+        phrase_list.addPhrase("сабақта жоқ")
+        phrase_list.addPhrase("жоқ")
+
+        # Имена учеников
+        phrase_list.addPhrase("Әлібек сабақта жоқ")
+        phrase_list.addPhrase("Ақмарал сабақта жоқ")
+        phrase_list.addPhrase("Сұлтан сабақта жоқ")
+        phrase_list.addPhrase("Алмаз сабақта жоқ")
+
         recognizing_q: asyncio.Queue = asyncio.Queue()
         recognized_q: asyncio.Queue = asyncio.Queue()
         canceled_q: asyncio.Queue = asyncio.Queue()
