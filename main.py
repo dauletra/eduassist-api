@@ -91,12 +91,6 @@ async def stt_stream(ws: WebSocket):
 
         speech_config = make_speech_config(endpoint_id=endpoint_id, language=language)
 
-        speech_config = speechsdk.SpeechConfig(
-            subscription="e61bf7ac-d028-4145-b4f0-b63ff4d7a61a",
-            region="swedencentral",
-            endpoint="wss://swedencentral.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1"
-        )
-
         recognizer = speechsdk.SpeechRecognizer(
             speech_config=speech_config,
             audio_config=audio_config,
